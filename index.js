@@ -1,182 +1,218 @@
 console.log("index.js loaded");
 
-// Global variable for worksheet
-let worksheet;
+(function () {
+  let renamedColumns = {};
+  let worksheet;
 
-// Initialize the Tableau Extensions API
-tableau.extensions.initializeAsync().then(() => {
-  console.log("Tableau Extensions API initialized");
-  const dashboard = tableau.extensions.dashboardContent.dashboard;
-  worksheet = dashboard.worksheets[0];
-  console.log("Worksheet:", worksheet.name);
-  loadTableauData();
-
-  const refreshButton = document.getElementById("refreshButton");
-  if (refreshButton) {
-    refreshButton.addEventListener("click", () => {
-      console.log("Refresh button clicked");
-
-      // Step 1: Apply filters
-      worksheet.getFiltersAsync()
-        .then(filters => {
-          if (filters.length > 0) {
-            const filter = filters[0];
-            console.log("Filter details:", JSON.stringify(filter, null, 2));
-
-            if (filter.filterType === tableau.FilterType.CATEGORICAL && filter.values && Array.isArray(filter.values)) {
-              return worksheet.applyFilterAsync(
-                filter.fieldName,
-                filter.values,
-                tableau.FilterUpdateType.REPLACE
-              ).then(() => console.log("Categorical filter reapplied"));
-            } else if (filter.filterType === tableau.FilterType.RANGE && (filter.minValue !== undefined || filter.maxValue !== undefined)) {
-              const rangeOptions = {};
-              if (filter.minValue !== undefined) rangeOptions.min = filter.minValue;
-              if (filter.maxValue !== undefined) rangeOptions.max = filter.maxValue;
-              return worksheet.applyRangeFilterAsync(filter.fieldName, rangeOptions)
-                .then(() => console.log("Range filter reapplied"));
-            } else {
-              console.log("Skipping unsupported or invalid filter type:", filter.filterType);
-              return Promise.resolve(); // Continue without applying
-            }
-          } else {
-            console.log("No filters found");
-            return Promise.resolve();
-          }
-        })
-        .then(() => {
-          // Step 2: Apply parameter after filters
-          return worksheet.getParametersAsync().then(params => {
-            const param = params.find(p => p.name === "Selected Metric"); // Replace with your parameter name
-            if (param) {
-              console.log("Parameter details:", JSON.stringify(param, null, 2));
-              const newValue = param.currentValue.value === "Sales" ? "Profit" : "Sales"; // Customize values
-              return worksheet.changeParameterValueAsync(param.name, newValue)
-                .then(() => console.log(`Parameter ${param.name} updated to ${newValue}`));
-            } else {
-              console.log("Parameter 'Selected Metric' not found");
-              return Promise.resolve();
-            }
-          });
-        })
-        .then(() => {
-          // Step 3: Refresh table after filters and parameter
-          loadTableauData();
-        })
-        .catch(err => console.error("Error in refresh process:", err));
-    });
-  } else {
-    console.error("Refresh button not found");
+  if (!tableau.extensions) {
+    console.error("Tableau Extensions API not loaded!");
+    return;
   }
 
-  const exportButton = document.getElementById("exportButton");
-  if (exportButton) {
-    exportButton.addEventListener("click", () => {
+  tableau.extensions.initializeAsync().then(() => {
+    console.log("Extension initialized");
+    worksheet = tableau.extensions.dashboardContent.dashboard.worksheets[0];
+    console.log("Worksheet:", worksheet.name);
+    renderViz();
+    setupParameterListeners();
+
+    document.getElementById("refreshButton").addEventListener("click", () => {
+      console.log("Manual refresh triggered");
+      renderViz(); // Simple refresh like yours, no filter reapplication
+    });
+
+    document.getElementById("exportButton").addEventListener("click", () => {
       console.log("Export button clicked");
       worksheet.getSummaryDataAsync().then(data => {
         console.log("Data fetched for export");
-        exportToExcel(data);
+        exportToXLSX(data.columns, data.data, worksheet.name);
       }).catch(err => console.error("Error fetching data:", err));
     });
-  } else {
-    console.error("Export button not found");
-  }
-}).catch(err => console.error("Error initializing API:", err));
-
-// Load data from Tableau worksheet
-function loadTableauData() {
-  if (!worksheet) {
-    console.error("Worksheet not defined");
-    return;
-  }
-  worksheet.getSummaryDataAsync().then(data => {
-    console.log("Rendering table");
-    renderTable(data);
-  }).catch(err => console.error("Error fetching data:", err));
-}
-
-// Render the data into the HTML table
-function renderTable(data) {
-  const tableHeader = document.getElementById("tableHeader").querySelector("tr");
-  const tableBody = document.getElementById("tableBody");
-
-  tableHeader.innerHTML = "";
-  tableBody.innerHTML = "";
-
-  data.columns.forEach(column => {
-    const th = document.createElement("th");
-    th.textContent = column.fieldName;
-    tableHeader.appendChild(th);
+  }).catch(error => {
+    console.error("Initialization failed:", error);
   });
 
-  data.data.forEach(row => {
-    const tr = document.createElement("tr");
-    row.forEach(cell => {
-      const td = document.createElement("td");
-      td.textContent = cell.formattedValue || cell.value;
-      const value = parseFloat(cell.value);
-      if (!isNaN(value)) {
-        if (value > 1000) td.style.backgroundColor = "#ffcccc"; // Light red
-        else if (value > 500) td.style.backgroundColor = "#ffffcc"; // Light yellow
-      }
-      tr.appendChild(td);
+  function setupParameterListeners() {
+    tableau.extensions.dashboardContent.dashboard.getParametersAsync().then(parameters => {
+      parameters.forEach(parameter => {
+        parameter.addEventListener(tableau.TableauEventType.ParameterChanged, (event) => {
+          console.log(`Parameter ${event.parameterName} changed to:`, event.field.value);
+          setTimeout(renderViz, 2000); // Your delay logic
+        });
+      });
+    }).catch(error => console.error("Error fetching parameters:", error));
+  }
+
+  function renderViz() {
+    worksheet.getSummaryDataAsync().then(data => {
+      const columns = data.columns;
+      const rows = data.data;
+
+      const header = document.getElementById("tableHeader");
+      let headerRow = "<tr>";
+      columns.forEach((col, index) => {
+        const name = renamedColumns[index] || col.fieldName;
+        headerRow += `<th data-index="${index}" contenteditable="true" onblur="updateColumnName(this, '${col.fieldName}')">${name}</th>`;
+      });
+      headerRow += "</tr>";
+      header.innerHTML = headerRow;
+
+      const body = document.getElementById("tableBody");
+      let bodyContent = "";
+      rows.forEach(row => {
+        bodyContent += "<tr>";
+        row.forEach(cell => {
+          const value = parseFloat(cell.value);
+          let style = "";
+          if (!isNaN(value)) {
+            if (value > 1000) style = 'style="background-color: #ffcccc;"'; // Pink
+            else if (value > 500) style = 'style="background-color: #ffffcc;"'; // Yellow
+          }
+          bodyContent += `<td ${style}>${cell.formattedValue}</td>`;
+        });
+        bodyContent += "</tr>";
+      });
+      body.innerHTML = bodyContent;
+
+      adjustColumnWidths();
+      autoAdjustColumnWidths();
+    }).catch(error => console.error("Error fetching data:", error));
+  }
+
+  window.updateColumnName = function(element, originalName) {
+    const newName = element.textContent.trim() || originalName;
+    const index = element.getAttribute("data-index");
+    renamedColumns[index] = newName;
+    element.textContent = newName;
+    adjustColumnWidths();
+  };
+
+  function adjustColumnWidths() {
+    const thElements = document.querySelectorAll("#tableHeader th");
+    thElements.forEach(th => {
+      th.removeEventListener("resize", resizeHandler);
+      th.addEventListener("resize", resizeHandler);
     });
-    tableBody.appendChild(tr);
-  });
-}
+  }
 
-// Export to Excel with formatting and header colors
-function exportToExcel(data) {
-  console.log("Exporting to Excel...");
-  const wb = XLSX.utils.book_new();
-  const wsData = [];
+  function resizeHandler(event) {
+    const th = event.target;
+    const index = parseInt(th.getAttribute("data-index"));
+    const width = th.offsetWidth;
+    document.querySelectorAll(`#dataTable td:nth-child(${index + 1})`).forEach(td => {
+      td.style.width = `${width}px`;
+      td.style.minWidth = `${width}px`;
+    });
+    updateTableWidth();
+  }
 
-  const headers = data.columns.map(col => col.fieldName);
-  wsData.push(headers);
+  function autoAdjustColumnWidths() {
+    const vizContainer = document.getElementById("vizContainer");
+    const panelWidth = vizContainer.offsetWidth;
+    const thElements = document.querySelectorAll("#tableHeader th");
+    const baseWidth = Math.max(100, Math.floor(panelWidth / thElements.length));
 
-  data.data.forEach(row => {
-    const rowData = row.map(cell => cell.formattedValue || cell.value);
-    wsData.push(rowData);
-  });
+    let totalWidth = 0;
+    thElements.forEach((th, index) => {
+      const width = Math.max(baseWidth, th.scrollWidth);
+      th.style.width = `${width}px`;
+      th.style.minWidth = `${width}px`;
+      document.querySelectorAll(`#dataTable td:nth-child(${index + 1})`).forEach(td => {
+        td.style.width = `${width}px`;
+        td.style.minWidth = `${width}px`;
+      });
+      totalWidth += width;
+    });
 
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
+    document.getElementById("dataTable").style.width = totalWidth > panelWidth ? `${totalWidth}px` : "100%";
+  }
 
-  // Data cell formatting
-  const range = XLSX.utils.decode_range(ws["!ref"]);
-  for (let R = 1; R <= range.e.r; ++R) {
-    for (let C = 0; C <= range.e.c; ++C) {
-      const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-      const cell = ws[cellAddress];
-      if (cell && cell.v !== undefined) {
-        const cellValue = parseFloat(cell.v.toString().replace(/[^0-9.-]+/g, ""));
-        if (!isNaN(cellValue)) {
-          cell.s = cell.s || {};
-          if (cellValue > 1000) {
-            cell.s.fill = { patternType: "solid", fgColor: { rgb: "FFCCCC" } };
-            console.log(`Applied pink to ${cellAddress}: ${cellValue}`);
-          } else if (cellValue > 500) {
-            cell.s.fill = { patternType: "solid", fgColor: { rgb: "FFFFCC" } };
-            console.log(`Applied yellow to ${cellAddress}: ${cellValue}`);
+  function updateTableWidth() {
+    const thElements = document.querySelectorAll("#tableHeader th");
+    const totalWidth = Array.from(thElements).reduce((sum, th) => sum + th.offsetWidth, 0);
+    const vizContainer = document.getElementById("vizContainer");
+    document.getElementById("dataTable").style.width = totalWidth > vizContainer.offsetWidth ? `${totalWidth}px` : "100%";
+  }
+
+  function exportToXLSX(columns, rows, worksheetName) {
+    const wsData = [];
+    const headers = ["Row Index", ...columns.map((col, i) => renamedColumns[i] || col.fieldName)];
+    wsData.push(headers);
+
+    rows.forEach((row, index) => {
+      const rowData = [(index + 1).toString(), ...row.map((cell, i) => {
+        const col = columns[i];
+        return col.dataType === "float" || col.dataType === "int" ? cell.value : cell.formattedValue;
+      })];
+      wsData.push(rowData);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Apply data cell colors
+    const range = XLSX.utils.decode_range(ws["!ref"]);
+    for (let R = 1; R <= range.e.r; ++R) {
+      for (let C = 1; C <= range.e.c; ++C) { // Start at C=1 to skip "Row Index"
+        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+        const cell = ws[cellAddress];
+        if (cell && cell.v !== undefined) {
+          const cellValue = parseFloat(cell.v.toString().replace(/[^0-9.-]+/g, ""));
+          if (!isNaN(cellValue)) {
+            cell.s = cell.s || {};
+            if (cellValue > 1000) {
+              cell.s.fill = { patternType: "solid", fgColor: { rgb: "FFCCCC" } };
+              console.log(`Applied pink to ${cellAddress}: ${cellValue}`);
+            } else if (cellValue > 500) {
+              cell.s.fill = { patternType: "solid", fgColor: { rgb: "FFFFCC" } };
+              console.log(`Applied yellow to ${cellAddress}: ${cellValue}`);
+            }
           }
         }
       }
     }
-  }
 
-  // Header colors (customize to match your Tableau view)
-  for (let C = 0; C <= range.e.c; ++C) {
-    const headerCell = XLSX.utils.encode_cell({ r: 0, c: C });
-    const column = data.columns[C];
-    let headerColor;
+    // Apply header colors
+    for (let C = 0; C <= range.e.c; ++C) {
+      const headerCell = XLSX.utils.encode_cell({ r: 0, c: C });
+      const columnName = headers[C].toLowerCase();
+      let headerColor;
 
-    switch (column.fieldName.toLowerCase()) { // Customize here
-      case "sales": headerColor = "D3D3D3"; break; // Darker gray
-      case "profit": headerColor = "CCFFCC"; break; // Light green
-      case "quantity": headerColor = "CCE5FF"; break; // Light blue
-      default: headerColor = "F2F2F2"; // Default light gray
+      switch (columnName) { // Customize to match your Tableau view
+        case "sales": headerColor = "D3D3D3"; break; // Darker gray
+        case "profit": headerColor = "CCFFCC"; break; // Light green
+        case "quantity": headerColor = "CCE5FF"; break; // Light blue
+        default: headerColor = "F2F2F2"; // Default light gray
+      }
+
+      ws[headerCell].s = {
+        font: { bold: true },
+        fill: { patternType: "solid", fgColor: { rgb: headerColor } },
+        border: { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } }
+      };
+      console.log(`Applied header color ${headerColor} to ${headerCell}`);
     }
 
-    ws[headerCell].s = {
-      font: { bold: true },
-      fill: { patternType: "solid", fgColor: { rgb: headerColor } },
-      border: { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" 
+    ws["!cols"] = headers.map(() => ({ wpx: 100 }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, worksheetName);
+    const fileData = XLSX.write(wb, { bookType: "xlsx", type: "binary" });
+    const blob = new Blob([s2ab(fileData)], { type: "application/octet-stream" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${worksheetName}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    console.log("Export complete");
+  }
+
+  function s2ab(s) {
+    const buf = new ArrayBuffer(s.length);
+    const view = new Uint8Array(buf);
+    for (let i = 0; i < s.length; i++) view[i] = s.charCodeAt(i) & 0xFF;
+    return buf;
+  }
+})();
