@@ -16,48 +16,54 @@ tableau.extensions.initializeAsync().then(() => {
     refreshButton.addEventListener("click", () => {
       console.log("Refresh button clicked");
 
-      // Apply filters safely
-      worksheet.getFiltersAsync().then(filters => {
-        if (filters.length > 0) {
-          const filter = filters[0];
-          console.log("Filter details:", JSON.stringify(filter, null, 2));
+      // Step 1: Apply filters
+      worksheet.getFiltersAsync()
+        .then(filters => {
+          if (filters.length > 0) {
+            const filter = filters[0];
+            console.log("Filter details:", JSON.stringify(filter, null, 2));
 
-          if (filter.filterType === tableau.FilterType.CATEGORICAL && filter.values && Array.isArray(filter.values)) {
-            worksheet.applyFilterAsync(
-              filter.fieldName,
-              filter.values,
-              tableau.FilterUpdateType.REPLACE
-            ).then(() => console.log("Categorical filter reapplied"));
-          } else if (filter.filterType === tableau.FilterType.RANGE) {
-            const rangeOptions = {};
-            if (filter.minValue !== undefined) rangeOptions.min = filter.minValue;
-            if (filter.maxValue !== undefined) rangeOptions.max = filter.maxValue;
-            worksheet.applyRangeFilterAsync(filter.fieldName, rangeOptions)
-              .then(() => console.log("Range filter reapplied"));
+            if (filter.filterType === tableau.FilterType.CATEGORICAL && filter.values && Array.isArray(filter.values)) {
+              return worksheet.applyFilterAsync(
+                filter.fieldName,
+                filter.values,
+                tableau.FilterUpdateType.REPLACE
+              ).then(() => console.log("Categorical filter reapplied"));
+            } else if (filter.filterType === tableau.FilterType.RANGE && (filter.minValue !== undefined || filter.maxValue !== undefined)) {
+              const rangeOptions = {};
+              if (filter.minValue !== undefined) rangeOptions.min = filter.minValue;
+              if (filter.maxValue !== undefined) rangeOptions.max = filter.maxValue;
+              return worksheet.applyRangeFilterAsync(filter.fieldName, rangeOptions)
+                .then(() => console.log("Range filter reapplied"));
+            } else {
+              console.log("Skipping unsupported or invalid filter type:", filter.filterType);
+              return Promise.resolve(); // Continue without applying
+            }
           } else {
-            console.log("Unsupported filter type:", filter.filterType);
+            console.log("No filters found");
+            return Promise.resolve();
           }
-        } else {
-          console.log("No filters found");
-        }
-      }).catch(err => console.error("Error applying filters:", err));
-
-      // Apply parameter (example: "Selected Metric")
-      worksheet.getParametersAsync().then(params => {
-        const param = params.find(p => p.name === "Selected Metric"); // Replace with your parameter name
-        if (param) {
-          console.log("Parameter details:", JSON.stringify(param, null, 2));
-          // Example: Toggle or set a value (adjust to your parameter’s allowable values)
-          const newValue = param.currentValue.value === "Sales" ? "Profit" : "Sales";
-          worksheet.changeParameterValueAsync(param.name, newValue).then(() => {
-            console.log(`Parameter ${param.name} updated to ${newValue}`);
-            loadTableauData(); // Refresh table after parameter change
-          }).catch(err => console.error("Error updating parameter:", err));
-        } else {
-          console.log("Parameter 'Selected Metric' not found; refreshing data only");
+        })
+        .then(() => {
+          // Step 2: Apply parameter after filters
+          return worksheet.getParametersAsync().then(params => {
+            const param = params.find(p => p.name === "Selected Metric"); // Replace with your parameter name
+            if (param) {
+              console.log("Parameter details:", JSON.stringify(param, null, 2));
+              const newValue = param.currentValue.value === "Sales" ? "Profit" : "Sales"; // Customize values
+              return worksheet.changeParameterValueAsync(param.name, newValue)
+                .then(() => console.log(`Parameter ${param.name} updated to ${newValue}`));
+            } else {
+              console.log("Parameter 'Selected Metric' not found");
+              return Promise.resolve();
+            }
+          });
+        })
+        .then(() => {
+          // Step 3: Refresh table after filters and parameter
           loadTableauData();
-        }
-      }).catch(err => console.error("Error getting parameters:", err));
+        })
+        .catch(err => console.error("Error in refresh process:", err));
     });
   } else {
     console.error("Refresh button not found");
@@ -142,4 +148,35 @@ function exportToExcel(data) {
       const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
       const cell = ws[cellAddress];
       if (cell && cell.v !== undefined) {
-        const cellValu
+        const cellValue = parseFloat(cell.v.toString().replace(/[^0-9.-]+/g, ""));
+        if (!isNaN(cellValue)) {
+          cell.s = cell.s || {};
+          if (cellValue > 1000) {
+            cell.s.fill = { patternType: "solid", fgColor: { rgb: "FFCCCC" } };
+            console.log(`Applied pink to ${cellAddress}: ${cellValue}`);
+          } else if (cellValue > 500) {
+            cell.s.fill = { patternType: "solid", fgColor: { rgb: "FFFFCC" } };
+            console.log(`Applied yellow to ${cellAddress}: ${cellValue}`);
+          }
+        }
+      }
+    }
+  }
+
+  // Header colors (customize to match your Tableau view)
+  for (let C = 0; C <= range.e.c; ++C) {
+    const headerCell = XLSX.utils.encode_cell({ r: 0, c: C });
+    const column = data.columns[C];
+    let headerColor;
+
+    switch (column.fieldName.toLowerCase()) { // Customize here
+      case "sales": headerColor = "D3D3D3"; break; // Darker gray
+      case "profit": headerColor = "CCFFCC"; break; // Light green
+      case "quantity": headerColor = "CCE5FF"; break; // Light blue
+      default: headerColor = "F2F2F2"; // Default light gray
+    }
+
+    ws[headerCell].s = {
+      font: { bold: true },
+      fill: { patternType: "solid", fgColor: { rgb: headerColor } },
+      border: { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" 
