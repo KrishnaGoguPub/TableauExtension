@@ -14,11 +14,10 @@ console.log("index.js loaded");
     worksheet = tableau.extensions.dashboardContent.dashboard.worksheets[0];
     console.log("Worksheet:", worksheet.name);
     renderViz();
-    setupParameterListeners();
 
     document.getElementById("refreshButton").addEventListener("click", () => {
       console.log("Manual refresh triggered");
-      renderViz(); // Simple refresh like yours, no filter reapplication
+      renderViz();
     });
 
     document.getElementById("exportButton").addEventListener("click", () => {
@@ -28,6 +27,8 @@ console.log("index.js loaded");
         exportToXLSX(data.columns, data.data, worksheet.name);
       }).catch(err => console.error("Error fetching data:", err));
     });
+
+    setupParameterListeners();
   }).catch(error => {
     console.error("Initialization failed:", error);
   });
@@ -37,7 +38,7 @@ console.log("index.js loaded");
       parameters.forEach(parameter => {
         parameter.addEventListener(tableau.TableauEventType.ParameterChanged, (event) => {
           console.log(`Parameter ${event.parameterName} changed to:`, event.field.value);
-          setTimeout(renderViz, 2000); // Your delay logic
+          setTimeout(renderViz, 2000);
         });
       });
     }).catch(error => console.error("Error fetching parameters:", error));
@@ -136,27 +137,31 @@ console.log("index.js loaded");
 
   function exportToXLSX(columns, rows, worksheetName) {
     const wsData = [];
-    const headers = ["Row Index", ...columns.map((col, i) => renamedColumns[i] || col.fieldName)];
+    // Headers without Row Index
+    const headers = columns.map((col, i) => renamedColumns[i] || col.fieldName);
     wsData.push(headers);
 
-    rows.forEach((row, index) => {
-      const rowData = [(index + 1).toString(), ...row.map((cell, i) => {
+    // Data without Row Index (preserving format from UI)
+    rows.forEach(row => {
+      const rowData = row.map((cell, i) => {
         const col = columns[i];
         return col.dataType === "float" || col.dataType === "int" ? cell.value : cell.formattedValue;
-      })];
+      });
       wsData.push(rowData);
     });
 
     const ws = XLSX.utils.aoa_to_sheet(wsData);
 
-    // Apply data cell colors
+    // Data cell colors
     const range = XLSX.utils.decode_range(ws["!ref"]);
     for (let R = 1; R <= range.e.r; ++R) {
-      for (let C = 1; C <= range.e.c; ++C) { // Start at C=1 to skip "Row Index"
+      for (let C = 0; C <= range.e.c; ++C) {
         const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
         const cell = ws[cellAddress];
         if (cell && cell.v !== undefined) {
-          const cellValue = parseFloat(cell.v.toString().replace(/[^0-9.-]+/g, ""));
+          const rawValue = cell.v; // Log raw value
+          const cellValue = parseFloat(rawValue.toString().replace(/[^0-9.-]+/g, ""));
+          console.log(`Cell ${cellAddress} - Raw: "${rawValue}", Parsed: ${cellValue}`);
           if (!isNaN(cellValue)) {
             cell.s = cell.s || {};
             if (cellValue > 1000) {
@@ -166,12 +171,14 @@ console.log("index.js loaded");
               cell.s.fill = { patternType: "solid", fgColor: { rgb: "FFFFCC" } };
               console.log(`Applied yellow to ${cellAddress}: ${cellValue}`);
             }
+          } else {
+            console.log(`No color applied to ${cellAddress}: non-numeric "${rawValue}"`);
           }
         }
       }
     }
 
-    // Apply header colors
+    // Header colors
     for (let C = 0; C <= range.e.c; ++C) {
       const headerCell = XLSX.utils.encode_cell({ r: 0, c: C });
       const columnName = headers[C].toLowerCase();
