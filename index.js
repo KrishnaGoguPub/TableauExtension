@@ -15,19 +15,34 @@ tableau.extensions.initializeAsync().then(() => {
   if (refreshButton) {
     refreshButton.addEventListener("click", () => {
       console.log("Refresh button clicked");
-      // Apply filters (example: adjust to your dashboard's filters)
       worksheet.getFiltersAsync().then(filters => {
         if (filters.length > 0) {
-          // Example: Reapply existing filters or clear them
-          const filter = filters[0]; // Use first filter as example
-          worksheet.applyFilterAsync(
-            filter.fieldName,
-            filter.values,
-            tableau.FilterUpdateType.REPLACE
-          ).then(() => {
-            console.log("Filters reapplied");
+          const filter = filters[0];
+          console.log("Filter details:", filter); // Debug filter object
+
+          // Handle different filter types
+          if (filter.filterType === tableau.FilterType.CATEGORICAL && filter.values) {
+            worksheet.applyFilterAsync(
+              filter.fieldName,
+              filter.values,
+              tableau.FilterUpdateType.REPLACE
+            ).then(() => {
+              console.log("Categorical filter reapplied");
+              loadTableauData();
+            }).catch(err => console.error("Error applying categorical filter:", err));
+          } else if (filter.filterType === tableau.FilterType.RANGE) {
+            // Example for range filter (adjust min/max as needed)
+            worksheet.applyRangeFilterAsync(
+              filter.fieldName,
+              { min: filter.minValue, max: filter.maxValue }
+            ).then(() => {
+              console.log("Range filter reapplied");
+              loadTableauData();
+            }).catch(err => console.error("Error applying range filter:", err));
+          } else {
+            console.log("Unsupported filter type or no values; refreshing data only");
             loadTableauData();
-          }).catch(err => console.error("Error applying filters:", err));
+          }
         } else {
           console.log("No filters found; refreshing data only");
           loadTableauData();
