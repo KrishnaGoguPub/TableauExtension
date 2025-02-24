@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Simple Viz Extension</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 10px;
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    #buttonContainer {
+      display: flex;
+      justify-content: flex-end;
+      padding-bottom: 10px;
+    }
+    #exportButton, #refreshButton {
+      padding: 5px 10px;
+      background-color: #003087;
+      color: white;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      margin-left: 5px;
+    }
+    #exportButton:hover, #refreshButton:hover {
+      background-color: #002060;
+    }
+    #vizContainer {
+      flex: 1;
+      overflow-x: auto; /* Horizontal scroll at bottom */
+      overflow-y: auto; /* Vertical scroll for entire table */
+      max-height: calc(100vh - 70px);
+    }
+    #dataTable {
+      border-collapse: collapse;
+      width: auto; /* Expand based on content */
+      table-layout: auto; /* Natural column widths */
+    }
+    th, td {
+      border: 1px solid #d3d3d3;
+      padding: 8px 12px;
+      text-align: left;
+      box-sizing: border-box;
+      min-width: 100px;
+      white-space: nowrap;
+    }
+    th {
+      resize: horizontal; /* Enable resizing */
+      cursor: col-resize;
+      background-color: #f2f2f2;
+      overflow-x: visible; /* Allow resizing handle to show */
+      max-width: 500px; /* Optional: limit max width */
+    }
+    #vizContainer::-webkit-scrollbar {
+      width: 8px; /* Vertical */
+      height: 8px; /* Horizontal */
+    }
+    #vizContainer::-webkit-scrollbar-thumb {
+      background: #888;
+    }
+    #vizContainer::-webkit-scrollbar-track {
+      background: #f1f1f1;
+    }
+  </style>
+  <script src="https://krishnagogupub.github.io/Myrepo/lib/tableau.extensions.1.latest.js"></script>
+  <!-- Load SheetJS for XLSX export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="index.js"></script>
+</head>
+<body>
+  <div id="container">
+    <div id="buttonContainer">
+      <button id="refreshButton">Apply Filters</button>
+      <button id="exportButton">Export to Excel</button>      
+    </div>
+    <div id="vizContainer">
+      <table id="dataTable">
+        <thead id="tableHeader">
+          <tr></tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>
