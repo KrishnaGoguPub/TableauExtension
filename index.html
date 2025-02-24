@@ -77,18 +77,17 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://krishnagogupub.github.io/TableauExtension/index.js"></script>
 </head>
-<body>
-  <div id="container">
-    <div id="buttonContainer">
-      <button id="refreshButton">Apply Filters</button>
-      <button id="exportButton">Export to Excel</button>      
+<div id="container">
+    <div id="buttonContainer" role="toolbar">
+      <button id="refreshButton" aria-label="Apply Filters">Apply Filters</button>
+      <button id="exportButton" aria-label="Export to Excel">Export to Excel</button>      
     </div>
     <div id="vizContainer">
-      <table id="dataTable">
+      <table id="dataTable" role="grid">
         <thead id="tableHeader">
-          <tr></tr>
+          <tr role="row"></tr>
         </thead>
-        <tbody id="tableBody"></tbody>
+        <tbody id="tableBody" role="rowgroup"></tbody>
       </table>
     </div>
   </div>
