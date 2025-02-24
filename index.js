@@ -15,39 +15,49 @@ tableau.extensions.initializeAsync().then(() => {
   if (refreshButton) {
     refreshButton.addEventListener("click", () => {
       console.log("Refresh button clicked");
+
+      // Apply filters safely
       worksheet.getFiltersAsync().then(filters => {
         if (filters.length > 0) {
           const filter = filters[0];
-          console.log("Filter details:", filter); // Debug filter object
+          console.log("Filter details:", JSON.stringify(filter, null, 2));
 
-          // Handle different filter types
-          if (filter.filterType === tableau.FilterType.CATEGORICAL && filter.values) {
+          if (filter.filterType === tableau.FilterType.CATEGORICAL && filter.values && Array.isArray(filter.values)) {
             worksheet.applyFilterAsync(
               filter.fieldName,
               filter.values,
               tableau.FilterUpdateType.REPLACE
-            ).then(() => {
-              console.log("Categorical filter reapplied");
-              loadTableauData();
-            }).catch(err => console.error("Error applying categorical filter:", err));
+            ).then(() => console.log("Categorical filter reapplied"));
           } else if (filter.filterType === tableau.FilterType.RANGE) {
-            // Example for range filter (adjust min/max as needed)
-            worksheet.applyRangeFilterAsync(
-              filter.fieldName,
-              { min: filter.minValue, max: filter.maxValue }
-            ).then(() => {
-              console.log("Range filter reapplied");
-              loadTableauData();
-            }).catch(err => console.error("Error applying range filter:", err));
+            const rangeOptions = {};
+            if (filter.minValue !== undefined) rangeOptions.min = filter.minValue;
+            if (filter.maxValue !== undefined) rangeOptions.max = filter.maxValue;
+            worksheet.applyRangeFilterAsync(filter.fieldName, rangeOptions)
+              .then(() => console.log("Range filter reapplied"));
           } else {
-            console.log("Unsupported filter type or no values; refreshing data only");
-            loadTableauData();
+            console.log("Unsupported filter type:", filter.filterType);
           }
         } else {
-          console.log("No filters found; refreshing data only");
+          console.log("No filters found");
+        }
+      }).catch(err => console.error("Error applying filters:", err));
+
+      // Apply parameter (example: "Selected Metric")
+      worksheet.getParametersAsync().then(params => {
+        const param = params.find(p => p.name === "Selected Metric"); // Replace with your parameter name
+        if (param) {
+          console.log("Parameter details:", JSON.stringify(param, null, 2));
+          // Example: Toggle or set a value (adjust to your parameter’s allowable values)
+          const newValue = param.currentValue.value === "Sales" ? "Profit" : "Sales";
+          worksheet.changeParameterValueAsync(param.name, newValue).then(() => {
+            console.log(`Parameter ${param.name} updated to ${newValue}`);
+            loadTableauData(); // Refresh table after parameter change
+          }).catch(err => console.error("Error updating parameter:", err));
+        } else {
+          console.log("Parameter 'Selected Metric' not found; refreshing data only");
           loadTableauData();
         }
-      }).catch(err => console.error("Error getting filters:", err));
+      }).catch(err => console.error("Error getting parameters:", err));
     });
   } else {
     console.error("Refresh button not found");
@@ -132,64 +142,4 @@ function exportToExcel(data) {
       const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
       const cell = ws[cellAddress];
       if (cell && cell.v !== undefined) {
-        const cellValue = parseFloat(cell.v.toString().replace(/[^0-9.-]+/g, ""));
-        if (!isNaN(cellValue)) {
-          cell.s = cell.s || {};
-          if (cellValue > 1000) {
-            cell.s.fill = { patternType: "solid", fgColor: { rgb: "FFCCCC" } };
-            console.log(`Applied pink to ${cellAddress}: ${cellValue}`);
-          } else if (cellValue > 500) {
-            cell.s.fill = { patternType: "solid", fgColor: { rgb: "FFFFCC" } };
-            console.log(`Applied yellow to ${cellAddress}: ${cellValue}`);
-          }
-        }
-      }
-    }
-  }
-
-  // Header colors (customize to match your Tableau view)
-  for (let C = 0; C <= range.e.c; ++C) {
-    const headerCell = XLSX.utils.encode_cell({ r: 0, c: C });
-    const column = data.columns[C];
-    let headerColor;
-
-    switch (column.fieldName.toLowerCase()) { // Customize here
-      case "sales": headerColor = "D3D3D3"; break; // Darker gray
-      case "profit": headerColor = "CCFFCC"; break; // Light green
-      case "quantity": headerColor = "CCE5FF"; break; // Light blue
-      default: headerColor = "F2F2F2"; // Default light gray
-    }
-
-    ws[headerCell].s = {
-      font: { bold: true },
-      fill: { patternType: "solid", fgColor: { rgb: headerColor } },
-      border: { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } }
-    };
-    console.log(`Applied header color ${headerColor} to ${headerCell}`);
-  }
-
-  ws["!cols"] = headers.map(() => ({ wpx: 100 }));
-
-  XLSX.utils.book_append_sheet(wb, ws, "TableauExport");
-
-  const fileData = XLSX.write(wb, { bookType: "xlsx", type: "binary" });
-  const blob = new Blob([s2ab(fileData)], { type: "application/octet-stream" });
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "TableauViewExport.xlsx";
-  console.log("Triggering download...");
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  window.URL.revokeObjectURL(url);
-  console.log("Download complete");
-}
-
-// Utility function for binary string
-function s2ab(s) {
-  const buf = new ArrayBuffer(s.length);
-  const view = new Uint8Array(buf);
-  for (let i = 0; i < s.length; i++) view[i] = s.charCodeAt(i) & 0xFF;
-  return buf;
-}
+        const cellValu
