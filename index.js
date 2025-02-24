@@ -1,23 +1,56 @@
+console.log("index.js loaded");
+
+// Global variable for worksheet
+let worksheet;
+
 // Initialize the Tableau Extensions API
 tableau.extensions.initializeAsync().then(() => {
   console.log("Tableau Extensions API initialized");
-  loadTableauData(); // Load data on startup
-}).catch(err => {
-  console.error("Error initializing Tableau Extensions API:", err);
-});
+  
+  // Set worksheet and load data
+  const dashboard = tableau.extensions.dashboardContent.dashboard;
+  worksheet = dashboard.worksheets[0]; // Use the first worksheet; adjust as needed
+  console.log("Worksheet set:", worksheet.name);
+  loadTableauData();
 
-// Global variables
-let worksheet;
+  // Set up event listeners after DOM and API are ready
+  const refreshButton = document.getElementById("refreshButton");
+  if (refreshButton) {
+    refreshButton.addEventListener("click", () => {
+      console.log("Refresh button clicked");
+      worksheet.applyFilterAsync().then(() => {
+        console.log("Filters applied, reloading data");
+        loadTableauData();
+      }).catch(err => console.error("Error applying filters:", err));
+    });
+  } else {
+    console.error("Refresh button not found in DOM");
+  }
+
+  const exportButton = document.getElementById("exportButton");
+  if (exportButton) {
+    exportButton.addEventListener("click", () => {
+      console.log("Export button clicked");
+      worksheet.getSummaryDataAsync().then(data => {
+        console.log("Data fetched for export");
+        exportToExcel(data);
+      }).catch(err => console.error("Error fetching data for export:", err));
+    });
+  } else {
+    console.error("Export button not found in DOM");
+  }
+}).catch(err => console.error("Error initializing Tableau Extensions API:", err));
 
 // Load data from Tableau worksheet
 function loadTableauData() {
-  const dashboard = tableau.extensions.dashboardContent.dashboard;
-  worksheet = dashboard.worksheets[0]; // Use the first worksheet; adjust as needed
+  if (!worksheet) {
+    console.error("Worksheet not defined");
+    return;
+  }
   worksheet.getSummaryDataAsync().then(data => {
+    console.log("Rendering table with data");
     renderTable(data);
-  }).catch(err => {
-    console.error("Error fetching data:", err);
-  });
+  }).catch(err => console.error("Error fetching data:", err));
 }
 
 // Render the data into the HTML table
@@ -25,57 +58,34 @@ function renderTable(data) {
   const tableHeader = document.getElementById("tableHeader").querySelector("tr");
   const tableBody = document.getElementById("tableBody");
 
-  // Clear existing content
   tableHeader.innerHTML = "";
   tableBody.innerHTML = "";
 
-  // Populate headers
   data.columns.forEach(column => {
     const th = document.createElement("th");
     th.textContent = column.fieldName;
     tableHeader.appendChild(th);
   });
 
-  // Populate rows with data and apply conditional formatting
   data.data.forEach(row => {
     const tr = document.createElement("tr");
-    row.forEach((cell, index) => {
+    row.forEach(cell => {
       const td = document.createElement("td");
       td.textContent = cell.formattedValue || cell.value;
-      
-      // Example: Apply color based on value (customize this logic)
       const value = parseFloat(cell.value);
       if (!isNaN(value)) {
         if (value > 1000) td.style.backgroundColor = "#ffcccc"; // Light red
         else if (value > 500) td.style.backgroundColor = "#ffffcc"; // Light yellow
       }
-      
       tr.appendChild(td);
     });
     tableBody.appendChild(tr);
   });
 }
 
-// Refresh button: Apply filters and reload data
-document.getElementById("refreshButton").addEventListener("click", () => {
-  worksheet.applyFilterAsync().then(() => {
-    loadTableauData();
-  }).catch(err => {
-    console.error("Error applying filters:", err);
-  });
-});
-
-// Export button: Export table to Excel with formatting
-document.getElementById("exportButton").addEventListener("click", () => {
-  worksheet.getSummaryDataAsync().then(data => {
-    exportToExcel(data);
-  }).catch(err => {
-    console.error("Error fetching data for export:", err);
-  });
-});
-
 // Export to Excel with formatting and header colors
 function exportToExcel(data) {
+  console.log("Exporting to Excel...");
   const wb = XLSX.utils.book_new();
   const wsData = [];
 
@@ -94,13 +104,12 @@ function exportToExcel(data) {
 
   // Apply formatting to data cells (pink and yellow)
   const range = XLSX.utils.decode_range(ws["!ref"]);
-  for (let R = 1; R <= range.e.r; ++R) { // Skip header row (R=0)
+  for (let R = 1; R <= range.e.r; ++R) {
     for (let C = 0; C <= range.e.c; ++C) {
       const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
       const cellValue = parseFloat(ws[cellAddress]?.v);
-
       if (!isNaN(cellValue)) {
-        ws[cellAddress].s = ws[cellAddress].s || {}; // Initialize style object
+        ws[cellAddress].s = ws[cellAddress].s || {};
         if (cellValue > 1000) {
           ws[cellAddress].s.fill = { fgColor: { rgb: "FFCCCC" } }; // Light red
         } else if (cellValue > 500) {
@@ -110,25 +119,24 @@ function exportToExcel(data) {
     }
   }
 
-  // Add styling to headers with colors from Tableau view (customize this)
+  // Add styling to headers with colors from Tableau view (customize here)
   for (let C = 0; C <= range.e.c; ++C) {
     const headerCell = XLSX.utils.encode_cell({ r: 0, c: C });
     const column = data.columns[C];
     let headerColor;
 
-    // Customize this block to match your Tableau view's header colors
-    // Since Tableau API doesn’t provide header colors, define them manually
-    switch (column.fieldName.toLowerCase()) { // Case-insensitive matching
-      case "sales": 
-        headerColor = "D3D3D3"; // Darker gray for Sales
+    // Define header colors based on your Tableau view
+    switch (column.fieldName.toLowerCase()) { // Adjust to match your viz
+      case "sales":
+        headerColor = "D3D3D3"; // Darker gray
         break;
-      case "profit": 
-        headerColor = "CCFFCC"; // Light green for Profit
+      case "profit":
+        headerColor = "CCFFCC"; // Light green
         break;
-      case "quantity": 
-        headerColor = "CCE5FF"; // Light blue for Quantity
+      case "quantity":
+        headerColor = "CCE5FF"; // Light blue
         break;
-      default: 
+      default:
         headerColor = "F2F2F2"; // Default light gray
     }
 
@@ -139,17 +147,28 @@ function exportToExcel(data) {
     };
   }
 
-  // Set column widths (approximate)
+  // Set column widths
   ws["!cols"] = headers.map(() => ({ wpx: 100 }));
 
   // Append worksheet to workbook
   XLSX.utils.book_append_sheet(wb, ws, "TableauExport");
 
-  // Export the file (keeping your original working method)
-  XLSX.writeFile(wb, "TableauViewExport.xlsx");
+  // Export the file (Blob workaround for Tableau Desktop)
+  const fileData = XLSX.write(wb, { bookType: "xlsx", type: "binary" });
+  const blob = new Blob([s2ab(fileData)], { type: "application/octet-stream" });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "TableauViewExport.xlsx";
+  console.log("Triggering download...");
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+  console.log("Download complete");
 }
 
-// Utility function for binary string (if needed for Blob export)
+// Utility function for binary string
 function s2ab(s) {
   const buf = new ArrayBuffer(s.length);
   const view = new Uint8Array(buf);
