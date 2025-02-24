@@ -74,7 +74,7 @@ document.getElementById("exportButton").addEventListener("click", () => {
   });
 });
 
-// Export to Excel with formatting
+// Export to Excel with formatting and header colors
 function exportToExcel(data) {
   const wb = XLSX.utils.book_new();
   const wsData = [];
@@ -92,7 +92,7 @@ function exportToExcel(data) {
   // Create worksheet
   const ws = XLSX.utils.aoa_to_sheet(wsData);
 
-  // Apply formatting (e.g., colors based on values)
+  // Apply formatting to data cells (pink and yellow)
   const range = XLSX.utils.decode_range(ws["!ref"]);
   for (let R = 1; R <= range.e.r; ++R) { // Skip header row (R=0)
     for (let C = 0; C <= range.e.c; ++C) {
@@ -110,12 +110,31 @@ function exportToExcel(data) {
     }
   }
 
-  // Add styling to headers
+  // Add styling to headers with colors from Tableau view (customize this)
   for (let C = 0; C <= range.e.c; ++C) {
     const headerCell = XLSX.utils.encode_cell({ r: 0, c: C });
+    const column = data.columns[C];
+    let headerColor;
+
+    // Customize this block to match your Tableau view's header colors
+    // Since Tableau API doesn’t provide header colors, define them manually
+    switch (column.fieldName.toLowerCase()) { // Case-insensitive matching
+      case "sales": 
+        headerColor = "D3D3D3"; // Darker gray for Sales
+        break;
+      case "profit": 
+        headerColor = "CCFFCC"; // Light green for Profit
+        break;
+      case "quantity": 
+        headerColor = "CCE5FF"; // Light blue for Quantity
+        break;
+      default: 
+        headerColor = "F2F2F2"; // Default light gray
+    }
+
     ws[headerCell].s = {
       font: { bold: true },
-      fill: { fgColor: { rgb: "F2F2F2" } }, // Light gray background
+      fill: { fgColor: { rgb: headerColor } },
       border: { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } }
     };
   }
@@ -126,7 +145,7 @@ function exportToExcel(data) {
   // Append worksheet to workbook
   XLSX.utils.book_append_sheet(wb, ws, "TableauExport");
 
-  // Export the file
+  // Export the file (keeping your original working method)
   XLSX.writeFile(wb, "TableauViewExport.xlsx");
 }
 
